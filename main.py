@@ -1,31 +1,40 @@
 import os
 import base64
-from flask import Flask, Response, request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 
-app = Flask(__name__)
-PORT = int(os.environ.get("PORT", 10000))
+app = FastAPI()
 
-# Your static VLESS node configuration string
-VLESS_NODE = "vless://b831381d-6324-4d53-ad4f-8cda48b30811@aimhackl-proxy-server.onrender.com:443?encryption=none&type=ws&path=/intercept#CYBER-ENGINE-Cloud"
+# Your VLESS subscription payload string
+VLESS_NODE = "vless://b831381d-6324-4d53-ad4f-8cda48b30811@aimhackl-proxy-server.onrender.com:443?security=tls&encryption=none&type=ws&path=/intercept&fp=chrome#CYBER-ENGINE-Cloud"
 
-# Endpoint 1: Serves as a valid V2Ray/Happ Subscription URL
-@app.route('/sub', methods=['GET'])
-def subscription():
-    # Base64 encode the config so Happ can parse it seamlessly
+@app.get("/")
+async def home():
+    return {"status": "CYBER-ENGINE Interceptor Active"}
+
+@app.get("/sub")
+async def subscription():
     encoded_sub = base64.b64encode(VLESS_NODE.encode('utf-8')).decode('utf-8')
-    return Response(encoded_sub, mimetype='text/plain')
+    return PlainTextResponse(encoded_sub)
 
-# Endpoint 2: Interceptor endpoint for traffic inspection
-@app.route('/intercept', methods=['GET', 'POST'])
-def intercept():
-    if request.method == 'POST':
-        data = request.get_data()
-        print(f"[CLOUD PACKET] Received {len(data)} bytes")
-    return "OK", 200
-
-@app.route('/', methods=['GET'])
-def home():
-    return "CYBER-ENGINE Node Server Active", 200
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=PORT)
+# WebSocket Interceptor endpoint matching your VLESS path
+@app.websocket("/intercept")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    print("\n[+] SUCCESS: Happ WebSocket Connection Established!")
+    
+    packet_count = 0
+    try:
+        while True:
+            # Receive incoming data packets from your phone in real-time
+            data = await websocket.receive_bytes()
+            packet_count += 1
+            print(f"[PACKET #{packet_count}] Captured {len(data)} bytes from phone.")
+            
+            # Echo/forward response back to keep the connection healthy and stable
+            await websocket.send_bytes(data)
+            
+    except WebSocketDisconnect:
+        print("[-] WebSocket Connection Closed by Client.")
+    except Exception as e:
+        print(f"[!] WebSocket Error: {e}")
